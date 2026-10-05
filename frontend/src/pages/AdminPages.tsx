@@ -1,0 +1,43 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { adminApi, commentsApi, postsApi } from "../api";
+import { apiMessage } from "../api/client";
+import type { Comment, Meta, Post, Role, User } from "../types/api";
+import { EmptyState, ErrorState, LoadingState } from "../components/States";
+import { Pagination } from "../components/Pagination";
+
+export function AdminDashboardPage() {
+  const [stats, setStats] = useState<{ totalUsers: number; totalPosts: number; totalComments: number } | null>(null); const [error, setError] = useState("");
+  const load = useCallback(async () => { try { setStats((await adminApi.stats()).data.data); setError(""); } catch (e) { setError(apiMessage(e)); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  return <><p className="eyebrow">System overview</p><h1>Dashboard</h1>{error ? <ErrorState message={error} retry={load} /> : !stats ? <LoadingState /> : <div className="stats"><article><span>Users</span><strong>{stats.totalUsers}</strong><small>including inactive accounts</small></article><article><span>Posts</span><strong>{stats.totalPosts}</strong><small>active posts</small></article><article><span>Comments</span><strong>{stats.totalComments}</strong><small>on active posts</small></article></div>}</>;
+}
+
+export function AdminUsersPage() {
+  const [users, setUsers] = useState<User[]>([]); const [meta, setMeta] = useState<Meta | null>(null); const [page, setPage] = useState(1); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => { setLoading(true); try { const r = await adminApi.users(page); setUsers(r.data.data); setMeta(r.data.meta); setError(""); } catch (e) { setError(apiMessage(e)); } finally { setLoading(false); } }, [page]); useEffect(() => { void load(); }, [load]);
+  const toggle = async (user: User) => { try { await adminApi.updateUser(user.id, { isActive: !user.isActive }); await load(); } catch (e) { setError(apiMessage(e)); } };
+  return <><div className="page-heading"><div><p className="eyebrow">Access control</p><h1>Users</h1></div><Link className="button primary" to="/admin/users/new">Create user</Link></div>{error && <ErrorState message={error} />}{loading ? <LoadingState /> : users.length === 0 ? <EmptyState /> : <div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.name}</strong><small>{user.email ?? "No email"}</small></td><td>{user.role}</td><td><span className={`chip ${user.isActive ? "success-chip" : ""}`}>{user.isActive ? "Active" : "Inactive"}</span></td><td><div className="actions"><Link className="button ghost" to={`/admin/users/${user.id}/edit`}>Edit</Link><button className="button danger" disabled={user.isProtectedAdmin} onClick={() => void toggle(user)}>{user.isActive ? "Deactivate" : "Reactivate"}</button></div></td></tr>)}</tbody></table></div>}<Pagination meta={meta} onPage={setPage} /></>;
+}
+
+export function AdminUserFormPage() {
+  const { id } = useParams(); const navigate = useNavigate(); const [form, setForm] = useState({ name: "", email: "", password: "", role: "USER" as Role, isActive: true }); const [error, setError] = useState(""); const [loading, setLoading] = useState(Boolean(id));
+  useEffect(() => { if (!id) return; void adminApi.user(id).then(r => { const u = r.data.data; setForm({ name: u.name, email: u.email || "", password: "", role: u.role, isActive: u.isActive }); }).catch(e => setError(apiMessage(e))).finally(() => setLoading(false)); }, [id]);
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); try { if (id) await adminApi.updateUser(id, { name: form.name, email: form.email, role: form.role, isActive: form.isActive }); else await adminApi.createUser({ name: form.name, email: form.email, password: form.password, role: form.role }); navigate("/admin/users"); } catch (e) { setError(apiMessage(e)); } };
+  if (loading) return <LoadingState />; return <><p className="eyebrow">User administration</p><h1>{id ? "Edit user" : "Create user"}</h1>{error && <ErrorState message={error} />}<form className="form-card" onSubmit={submit}><label>Name<input required minLength={2} maxLength={80} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>Email<input required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label>{!id && <label>Password<input required type="password" minLength={10} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></label>}<label>Role<select value={form.role} onChange={e => setForm({ ...form, role: e.target.value as Role })}><option>USER</option><option>ADMIN</option></select></label>{id && <label className="checkbox"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} />Active account</label>}<div className="actions"><button className="button primary">Save user</button><button type="button" className="button ghost" onClick={() => navigate(-1)}>Cancel</button></div></form></>;
+}
+
+export function AdminPostsPage() {
+  const [posts, setPosts] = useState<Post[]>([]); const [meta, setMeta] = useState<Meta | null>(null); const [page, setPage] = useState(1); const [status, setStatus] = useState("active"); const [error, setError] = useState("");
+  const load = useCallback(async () => { try { const r = await adminApi.posts(page, status); setPosts(r.data.data); setMeta(r.data.meta); setError(""); } catch (e) { setError(apiMessage(e)); } }, [page, status]); useEffect(() => { void load(); }, [load]);
+  const remove = async (id: string) => { if (!window.confirm("Soft-delete this post?")) return; try { await postsApi.remove(id); await load(); } catch (e) { setError(apiMessage(e)); } };
+  return <><div className="page-heading"><div><p className="eyebrow">Content control</p><h1>Posts</h1></div><select aria-label="Post status" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">Active</option><option value="deleted">Deleted</option><option value="all">All</option></select></div>{error && <ErrorState message={error} />}{posts.length === 0 ? <EmptyState /> : <div className="table-wrap"><table><thead><tr><th>Post</th><th>Author</th><th>Status</th><th>Actions</th></tr></thead><tbody>{posts.map(post => <tr key={post.id}><td>{post.title}</td><td>{post.author.name}</td><td>{post.deletedAt ? "Deleted" : "Active"}</td><td><div className="actions">{!post.deletedAt && <><Link className="button ghost" to={`/posts/${post.slug}`}>View</Link><Link className="button ghost" to={`/posts/${post.id}/edit`}>Edit</Link><button className="button danger" onClick={() => void remove(post.id)}>Delete</button></>}</div></td></tr>)}</tbody></table></div>}<Pagination meta={meta} onPage={setPage} /></>;
+}
+
+export function AdminCommentsPage() {
+  const [comments, setComments] = useState<Comment[]>([]); const [meta, setMeta] = useState<Meta | null>(null); const [page, setPage] = useState(1); const [error, setError] = useState("");
+  const load = useCallback(async () => { try { const r = await adminApi.comments(page); setComments(r.data.data); setMeta(r.data.meta); setError(""); } catch (e) { setError(apiMessage(e)); } }, [page]); useEffect(() => { void load(); }, [load]);
+  const remove = async (id: string) => { if (!window.confirm("Permanently delete this comment?")) return; try { await commentsApi.remove(id); await load(); } catch (e) { setError(apiMessage(e)); } };
+  const edit = async (comment: Comment) => { const content = window.prompt("Edit comment", comment.content); if (content === null) return; try { await commentsApi.update(comment.id, content); await load(); } catch (e) { setError(apiMessage(e)); } };
+  return <><p className="eyebrow">Moderation</p><h1>Comments</h1>{error && <ErrorState message={error} />}{comments.length === 0 ? <EmptyState /> : <div className="table-wrap"><table><thead><tr><th>Comment</th><th>Post</th><th>Author</th><th>Actions</th></tr></thead><tbody>{comments.map(comment => <tr key={comment.id}><td>{comment.content.slice(0, 100)}</td><td>{comment.post?.title ?? comment.postId}{comment.post?.deletedAt && <small>Deleted post</small>}</td><td>{comment.author.name}</td><td><div className="actions"><button className="button ghost" onClick={() => void edit(comment)}>Edit</button><button className="button danger" onClick={() => void remove(comment.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}<Pagination meta={meta} onPage={setPage} /></>;
+}

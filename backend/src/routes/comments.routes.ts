@@ -1,0 +1,14 @@
+import { Router } from "express";
+import { z } from "zod";
+import * as controller from "../controllers/comments.controller.js";
+import { authenticate, optionalAuthenticate } from "../middleware/authenticate.js";
+import { requireCommentOwnershipOrAdmin } from "../middleware/ownership.js";
+import { trustedOrigin } from "../middleware/trusted-origin.js";
+import { validate } from "../middleware/validate.js";
+import { objectId, noBody } from "../validators/common.schemas.js";
+import { commentSchema } from "../validators/comment.schemas.js";
+export const commentsRouter = Router();
+const idParams = z.object({ id: objectId }).strict();
+commentsRouter.get("/:id", optionalAuthenticate, validate({ params: idParams }), controller.get);
+commentsRouter.patch("/:id", trustedOrigin, authenticate, validate({ params: idParams, body: commentSchema }), requireCommentOwnershipOrAdmin, controller.update);
+commentsRouter.delete("/:id", trustedOrigin, authenticate, validate({ params: idParams, body: noBody }), requireCommentOwnershipOrAdmin, controller.remove);
