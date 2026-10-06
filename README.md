@@ -11,20 +11,20 @@ Inkstone is a complete blog application built for the supplied MERN Stack assign
 - `USER` and `ADMIN` roles enforced by the API
 - Blog post CRUD with stable URL slugs, ownership, pagination, and soft deletion
 - Referenced comment CRUD with ownership and admin moderation
+- Real-time comment notifications using authenticated Socket.io with persistent MongoDB storage
+- Notification bell, unread badge, popover dropdown, mark as read, and pagination
 - Admin dashboard with user, active-post, and visible-comment totals
 - Full admin management for users, posts, and comments
 - Structured activity logs, rate limits, Helmet, CORS, strict validation, and safe errors
 - Jest/Supertest/MongoDB integration tests and Vitest/React Testing Library tests
 - Optional idempotent development seed data
 
-The optional real-time notification bonus is intentionally outside this submission.
-
 ## Technology
 
 | Area | Stack |
 | --- | --- |
-| Frontend | React 19, Vite, TypeScript, React Router, Axios, React Hook Form, Zod |
-| Backend | Node.js 24, Express 5, TypeScript, Mongoose, Passport, Pino |
+| Frontend | React 19, Vite, TypeScript, React Router, Tailwind CSS 4, shadcn/ui (Radix primitives), Lucide React, Axios, React Hook Form, Zod, Socket.io Client |
+| Backend | Node.js 24, Express 5, TypeScript, Mongoose, Passport, Pino, Socket.io |
 | Database | MongoDB |
 | Security | bcrypt, JWT, Helmet, CORS, rate limiting, HttpOnly cookies |
 | Tests | Jest, Supertest, mongodb-memory-server, Vitest, Testing Library |
@@ -241,6 +241,7 @@ All application routes use `/api/v1`. Protected routes require `Authorization: B
 | Users | Admin `GET/POST /users`, `GET/PATCH/DELETE /users/:id` |
 | Posts | `GET/POST /posts`, `GET /posts/slug/:slug`, `GET/PATCH/DELETE /posts/:id` |
 | Comments | `GET/POST /posts/:postId/comments`, `GET/PATCH/DELETE /comments/:id` |
+| Notifications | `GET /notifications`, `PATCH /notifications/read-all`, `PATCH /notifications/:id/read` |
 | Admin | `GET /admin/stats`, `/admin/posts`, `/admin/comments` |
 
 Successful responses follow:
@@ -262,6 +263,18 @@ Errors follow:
 
 Paginated responses use `meta: { page, limit, total, totalPages }`. Maximum page size is 50.
 
+## Real-time notifications (Socket.io)
+
+Real-time notifications are delivered using Socket.io and backed by persistent MongoDB storage:
+
+- **Socket Authentication**: Connections authenticate during handshake via `auth.accessToken`. The token and session are validated against database records (`isActive`, session revocation, expiration, and `authVersion`). Sockets join a private room `user:<userId>`.
+- **Continuous Authorization**: Connected sockets are checked at access-token expiration, periodically revalidated every 30 seconds, and verified immediately before delivering private notifications. If a session is revoked or invalidated, `auth:error` is emitted and the socket is disconnected.
+- **Socket Events**:
+  - `notification:new`: Emitted to the post owner's room when a new comment is posted on their post (comment author excluded).
+  - `notifications:changed`: Emitted when notifications are marked as read, signaling connected tabs to refresh authoritative state.
+  - `auth:error`: Sanitized authentication error notification (`ACCESS_TOKEN_EXPIRED`, `SESSION_INVALID`, `SERVICE_UNAVAILABLE`).
+- **Deployment & Proxy Setup**: In production, reverse proxies (such as Nginx) must forward both `/api` and `/socket.io` to the backend Node process, enabling HTTP polling fallback and WebSocket upgrades (`Upgrade $http_upgrade` and `Connection "upgrade"`).
+
 ## Permissions
 
 | Action | Visitor | User | Admin |
@@ -270,21 +283,28 @@ Paginated responses use `meta: { page, limit, total, totalPages }`. Maximum page
 | Create posts/comments | No | Yes | Yes |
 | Edit/delete own content | No | Yes | Yes |
 | Edit/delete another user's content | No | No | Yes |
+| Access notifications | No | Yes (own only) | Yes (own only) |
 | Manage users and dashboard | No | No | Yes |
 | Inspect deleted posts/comments | No | No | Yes |
 
-Post deletion is soft deletion. Deleted posts and their retained comments disappear from ordinary access. Comment deletion is permanent. User deletion means deactivation so historical authorship remains intact.
+Post deletion is soft deletion. Deleted posts and their retained comments disappear from ordinary access. Comment deletion is permanent. User deletion means deactivation so historical authorship remains intact. Notifications are strictly private to their recipient; admins have no override to inspect or mark other users' notifications.
 
-## Tests
+## Verification & tests
 
-The backend integration suite downloads a temporary MongoDB binary on its first run and never uses the development database.
+The backend integration suite downloads a temporary MongoDB binary on its first run and never uses the development database. The frontend suite tests routing, layout, authentication guards, real-time Socket.io notification updates, confirmation dialogs, forms, and presentation components.
 
 ```powershell
+# Frontend verification: typecheck, tests, and production build
+npm.cmd run typecheck -w frontend
+npm.cmd test -w frontend
+npm.cmd run build -w frontend
+
+# Full test suite across workspaces
 npm.cmd run test --workspaces
 npm.cmd run test:coverage -w backend
 ```
 
-The backend suite covers local authentication, refresh rotation/reuse, origin protection, validation, ownership, admin overrides, soft deletion, comment moderation, bootstrap-admin protection, and dashboard totals. Frontend tests cover protected/admin guards, pagination, and safe text rendering.
+The backend suite covers local authentication, refresh rotation/reuse, origin protection, validation, ownership, admin overrides, soft deletion, comment moderation, bootstrap-admin protection, dashboard totals, notification REST persistence/authorization, and real Socket.io integration. Frontend tests cover protected/admin guards, pagination, safe text rendering, notification bell interactions, real-time socket handling, auth generation refresh guards, desktop and mobile navigation, confirmation/edit dialogs, and shared presentation cards.
 
 ## Activity logging
 
@@ -294,23 +314,33 @@ Pino emits structured records for login/registration/logout, OAuth operations, p
 
 - Posts and comments are plain text rather than rich text.
 - Password recovery, email verification, MFA, post restoration, and account merging are outside the assignment.
-- The in-memory rate limiter assumes a single API instance. A distributed deployment should use a shared limiter store.
+- The in-memory rate limiter and Socket.io server assume a single API instance. Deploying across multiple backend instances requires a shared rate-limit store and `@socket.io/redis-adapter`.
+- Standalone MongoDB write reliability boundary: If the database or process fails between comment persistence and notification creation, the comment persists while the notification failure is caught and logged.
 - OAuth provider availability depends on external credentials, provider-console configuration, and test-account access.
 - Offset pagination is appropriate for this assignment but is not a stable snapshot during concurrent writes.
-- Real-time notifications are the assignment's optional bonus and are not implemented.
 
 ## Demo video flow
 
-A complete demonstration fits in eight to nine minutes:
+A complete demonstration fits in ten minutes:
 
 1. Browse the public list and details.
 2. Register, log out, log in, and refresh the page.
 3. Show Google and Facebook login using configured test accounts.
 4. Create, edit, and soft-delete a post.
 5. Create, edit, and delete a comment; show an ownership rejection.
-6. Log in as admin and inspect dashboard totals.
-7. Create, edit, deactivate, and reactivate a user.
-8. Edit another user's post, inspect deleted posts, and moderate comments.
-9. Show passing tests, repository structure, and this README.
+6. **Real-time notifications demo**:
+   - Open Browser A (User A) and Browser B / incognito (User B).
+   - User B has a published post.
+   - User A adds a comment to User B's post.
+   - User B's notification bell unread badge updates immediately without refreshing.
+   - User B clicks the bell, inspects the new notification snapshot, and clicks to navigate or marks it as read.
+   - Refresh User B's browser to prove persistence in MongoDB.
+   - Show that commenting on one's own post produces no self-notification.
+   - Show that User A cannot view or manipulate User B's notifications.
+7. Log in as admin and inspect dashboard totals.
+8. Create, edit, deactivate, and reactivate a user.
+9. Edit another user's post, inspect deleted posts, and moderate comments.
+10. Show passing tests, repository structure, and this README.
 
 Never show real secrets, provider credentials, cookies, or tokens in the recording.
+

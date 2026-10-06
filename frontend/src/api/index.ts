@@ -1,5 +1,5 @@
 import { apiClient, rawClient } from "./client";
-import type { ApiResponse, AuthPayload, Comment, Meta, Post, User } from "../types/api";
+import type { ApiResponse, AuthPayload, Comment, Meta, NotificationItem, NotificationsData, Post, User } from "../types/api";
 export const authApi = {
   register: (body: { name: string; email: string; password: string }) => rawClient.post<ApiResponse<AuthPayload>>("/auth/register", body),
   login: (body: { email: string; password: string }) => rawClient.post<ApiResponse<AuthPayload>>("/auth/login", body),
@@ -21,6 +21,11 @@ export const commentsApi = {
   update: (id: string, content: string) => apiClient.patch<ApiResponse<Comment>>(`/comments/${id}`, { content }),
   remove: (id: string) => apiClient.delete(`/comments/${id}`, { data: {} })
 };
+export const notificationsApi = {
+  list: (page = 1, limit = 10) => apiClient.get<ApiResponse<NotificationsData>>("/notifications", { params: { page, limit } }),
+  markAsRead: (id: string) => apiClient.patch<ApiResponse<NotificationItem>>(`/notifications/${id}/read`, {}),
+  markAllAsRead: () => apiClient.patch<ApiResponse<{ modifiedCount: number }>>("/notifications/read-all", {})
+};
 export const adminApi = {
   stats: () => apiClient.get<ApiResponse<{ totalUsers: number; totalPosts: number; totalComments: number }>>("/admin/stats"),
   users: (page = 1) => apiClient.get<ApiResponse<User[]>>("/users", { params: { page, limit: 10 } }),
@@ -32,3 +37,4 @@ export const adminApi = {
   comments: (page = 1) => apiClient.get<ApiResponse<Comment[]>>("/admin/comments", { params: { page, limit: 10 } })
 };
 export type Paginated<T> = { items: T[]; meta: Meta | null };
+

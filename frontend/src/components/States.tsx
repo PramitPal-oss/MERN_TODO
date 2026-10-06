@@ -1,3 +1,59 @@
-export const LoadingState = ({ label = "Loading…" }: { label?: string }) => <div className="state" role="status"><span className="spinner" />{label}</div>;
-export const EmptyState = ({ children = "Nothing to show yet." }: { children?: React.ReactNode }) => <div className="state muted">{children}</div>;
-export const ErrorState = ({ message, retry }: { message: string; retry?: () => void }) => <div className="alert error" role="alert"><span>{message}</span>{retry && <button className="button ghost" onClick={retry}>Try again</button>}</div>;
+import React from "react";
+import { Loader2, AlertCircle, Inbox } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+
+export function LoadingState({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center min-h-[180px] gap-3 text-muted-foreground"
+      role="status"
+    >
+      <Loader2 className="h-6 w-6 animate-spin text-foreground" />
+      <span className="text-sm font-medium">{label}</span>
+    </div>
+  );
+}
+
+export function EmptyState({
+  children = "Nothing to show yet.",
+}: {
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[180px] p-8 text-center rounded-lg border border-dashed border-border bg-card">
+      <Inbox className="h-8 w-8 text-muted-foreground/60 mb-2" />
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
+export function ErrorState({
+  message,
+  retry,
+}: {
+  message: string;
+  retry?: () => void;
+}) {
+  return (
+    <Alert variant="destructive" className="my-4">
+      <AlertCircle className="h-4 w-4" />
+      <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <AlertTitle className="text-sm font-semibold">Error</AlertTitle>
+          <AlertDescription className="text-sm">{message}</AlertDescription>
+        </div>
+        {retry && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={retry}
+            className="self-start sm:self-center shrink-0 border-destructive/30 hover:bg-destructive/10 text-destructive text-xs h-8"
+          >
+            Try again
+          </Button>
+        )}
+      </div>
+    </Alert>
+  );
+}

@@ -1,14 +1,25 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ApiResponse, AuthPayload } from "../types/api";
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1";
+export const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1";
 export const rawClient = axios.create({ baseURL, withCredentials: true, headers: { "Content-Type": "application/json" } });
 export const apiClient = axios.create({ baseURL, withCredentials: true, headers: { "Content-Type": "application/json" } });
 let accessToken: string | null = null;
 let refreshPromise: Promise<AuthPayload> | null = null;
 let authFailure: (() => void) | null = null;
+const tokenListeners = new Set<(token: string | null) => void>();
 
-export const setAccessToken = (token: string | null) => { accessToken = token; };
+export const getAccessToken = () => accessToken;
+export const onTokenChange = (listener: (token: string | null) => void) => {
+  tokenListeners.add(listener);
+  return () => { tokenListeners.delete(listener); };
+};
+export const setAccessToken = (token: string | null) => {
+  accessToken = token;
+  tokenListeners.forEach(listener => {
+    try { listener(token); } catch { /* ignore listener error */ }
+  });
+};
 export const setAuthFailureHandler = (handler: () => void) => { authFailure = handler; };
 
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {

@@ -2,6 +2,7 @@ import { Comment } from "../models/comment.model.js";
 import { Post } from "../models/post.model.js";
 import { AppError } from "../utils/app-error.js";
 import { commentDto } from "../utils/serializers.js";
+import { notifyCommentCreated } from "./notification.service.js";
 
 async function requireActivePost(postId: string) {
   const post = await Post.exists({ _id: postId, deletedAt: null });
@@ -19,9 +20,29 @@ export async function listComments(postId: string, page: number, limit: number) 
 }
 
 export async function createComment(postId: string, userId: string, content: string) {
-  await requireActivePost(postId);
+  const post = await Post.findOne({ _id: postId, deletedAt: null }).select("author title slug").lean();
+  if (!post) throw new AppError(404, "POST_NOT_FOUND", "Post was not found");
+
   const created = await Comment.create({ post: postId, author: userId, content });
-  return commentDto(await Comment.findById(created._id).populate("author", "name").lean());
+  const comment = await Comment.findById(created._id).populate("author", "name").lean();
+  const dto = commentDto(comment);
+
+  const actorName = (comment?.author as any)?.name ?? "Someone";
+  try {
+    await notifyCommentCreated({
+      recipientId: post.author.toString(),
+      actorId: userId,
+      actorName,
+      postTitle: post.title,
+      postSlug: post.slug,
+      postId: post._id.toString(),
+      commentId: created._id.toString()
+    });
+  } catch {
+    // Preserves comment success even if notification service throws unexpectedly
+  }
+
+  return dto;
 }
 
 export async function getComment(id: string, isAdmin: boolean) {

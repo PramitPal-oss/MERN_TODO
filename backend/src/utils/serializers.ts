@@ -27,3 +27,18 @@ export function commentDto(comment: any, admin = false) {
   if (admin && comment.post && typeof comment.post === "object") value.post = { id: id(comment.post._id), title: comment.post.title, slug: comment.post.slug, deletedAt: comment.post.deletedAt ? iso(comment.post.deletedAt) : null };
   return value;
 }
+
+export function notificationDto(notification: any) {
+  return {
+    id: id(notification._id),
+    actorId: id(notification.actor?._id ?? notification.actor),
+    type: notification.type,
+    message: notification.message,
+    postId: id(notification.post?._id ?? notification.post),
+    postSlug: notification.postSlug,
+    commentId: id(notification.comment?._id ?? notification.comment),
+    isRead: Boolean(notification.isRead),
+    createdAt: iso(notification.createdAt),
+    updatedAt: iso(notification.updatedAt)
+  };
+}

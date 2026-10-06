@@ -9,29 +9,474 @@ import type { Meta, Post } from "../types/api";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { Pagination } from "../components/Pagination";
+import { PageHeading } from "../components/PageHeading";
+import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
+import { UserAvatar } from "../components/UserAvatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import {
+  PenSquare,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+} from "lucide-react";
 
-const schema = z.object({ title: z.string().trim().min(3).max(160), content: z.string().trim().min(1).max(50000) });
+const schema = z.object({
+  title: z.string().trim().min(3, "Title must be at least 3 characters").max(160),
+  content: z.string().trim().min(1, "Story content is required").max(50000),
+});
 type Input = z.infer<typeof schema>;
+
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value)
+  );
+
 export function PostEditorPage() {
-  const { id } = useParams(); const navigate = useNavigate(); const auth = useAuth(); const [error, setError] = useState(""); const [loading, setLoading] = useState(Boolean(id));
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Input>({ resolver: zodResolver(schema) });
-  useEffect(() => { if (!id) return; void postsApi.get(id).then(r => { if (r.data.data.author.id !== auth.user?.id && auth.user?.role !== "ADMIN") { navigate("/403", { replace: true }); return; } reset({ title: r.data.data.title, content: r.data.data.content || "" }); }).catch(e => setError(apiMessage(e))).finally(() => setLoading(false)); }, [id, auth.user, navigate, reset]);
-  const submit = handleSubmit(async values => { try { const post = id ? (await postsApi.update(id, values)).data.data : (await postsApi.create(values)).data.data; navigate(`/posts/${post.slug}`); } catch (e) { setError(apiMessage(e)); } });
-  if (loading) return <LoadingState />;
-  return <section className="editor"><p className="eyebrow">{id ? "Refine your story" : "A blank page"}</p><h1>{id ? "Edit post" : "Write a new post"}</h1>{error && <ErrorState message={error} />}<form onSubmit={submit}><label>Title<input {...register("title")} /></label>{errors.title && <small className="field-error">{errors.title.message}</small>}<label>Story<textarea className="story-editor" {...register("content")} /></label>{errors.content && <small className="field-error">{errors.content.message}</small>}<div className="actions"><button className="button primary" disabled={isSubmitting}>{isSubmitting ? "Saving…" : "Publish"}</button><button type="button" className="button ghost" onClick={() => navigate(-1)}>Cancel</button></div></form></section>;
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const auth = useAuth();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(Boolean(id));
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<Input>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    if (!id) return;
+    void postsApi
+      .get(id)
+      .then((r) => {
+        if (
+          r.data.data.author.id !== auth.user?.id &&
+          auth.user?.role !== "ADMIN"
+        ) {
+          navigate("/403", { replace: true });
+          return;
+        }
+        reset({
+          title: r.data.data.title,
+          content: r.data.data.content || "",
+        });
+      })
+      .catch((e) => setError(apiMessage(e)))
+      .finally(() => setLoading(false));
+  }, [id, auth.user, navigate, reset]);
+
+  const submit = handleSubmit(async (values) => {
+    setError("");
+    try {
+      const post = id
+        ? (await postsApi.update(id, values)).data.data
+        : (await postsApi.create(values)).data.data;
+      navigate(`/posts/${post.slug}`);
+    } catch (e) {
+      setError(apiMessage(e));
+    }
+  });
+
+  if (loading) return <LoadingState label="Loading editor…" />;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <PageHeading
+        title={id ? "Edit story" : "Write a new story"}
+        description={
+          id
+            ? "Refine your narrative, clarify your thoughts, and save changes."
+            : "Share insights, experiences, and lessons with the Inkstone community."
+        }
+      />
+
+      {error && <ErrorState message={error} />}
+
+      <Card className="border-border shadow-sm">
+        <form onSubmit={submit}>
+          <CardContent className="space-y-6 pt-6">
+            <div className="space-y-2">
+              <Label htmlFor="post-title" className="text-base font-semibold">
+                Title
+              </Label>
+              <Input
+                id="post-title"
+                placeholder="Give your story a clear, compelling title..."
+                className="text-lg font-medium"
+                aria-invalid={Boolean(errors.title)}
+                aria-describedby={errors.title ? "post-title-error" : undefined}
+                {...register("title")}
+              />
+              {errors.title && (
+                <p id="post-title-error" className="text-xs text-destructive">
+                  {errors.title.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="post-content" className="text-base font-semibold">
+                Content
+              </Label>
+              <Textarea
+                id="post-content"
+                placeholder="Write your story here... Plain text formatting with line breaks is preserved."
+                className="min-h-[360px] sm:min-h-[460px] font-sans text-base leading-relaxed resize-y"
+                aria-invalid={Boolean(errors.content)}
+                aria-describedby={errors.content ? "post-content-error" : undefined}
+                {...register("content")}
+              />
+              {errors.content && (
+                <p id="post-content-error" className="text-xs text-destructive">
+                  {errors.content.message}
+                </p>
+              )}
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-between border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(-1)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {id ? "Save changes" : "Publish post"}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </div>
+  );
 }
 
 export function MyPostsPage() {
-  const auth = useAuth(); const [posts, setPosts] = useState<Post[]>([]); const [meta, setMeta] = useState<Meta | null>(null); const [page, setPage] = useState(1); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
-  const load = useCallback(async () => { if (!auth.user) return; setLoading(true); try { const r = await postsApi.list(page, auth.user.id); setPosts(r.data.data); setMeta(r.data.meta); setError(""); } catch (e) { setError(apiMessage(e)); } finally { setLoading(false); } }, [auth.user, page]);
-  useEffect(() => { void load(); }, [load]);
-  const remove = async (id: string) => { if (!window.confirm("Soft-delete this post?")) return; try { await postsApi.remove(id); await load(); } catch (e) { setError(apiMessage(e)); } };
-  return <><div className="page-heading"><div><p className="eyebrow">Your workspace</p><h1>My posts</h1></div><Link className="button primary" to="/posts/new">Write a post</Link></div>{loading ? <LoadingState /> : error ? <ErrorState message={error} retry={load} /> : posts.length === 0 ? <EmptyState>You have not published a post yet.</EmptyState> : <div className="table-wrap"><table><thead><tr><th>Title</th><th>Published</th><th>Actions</th></tr></thead><tbody>{posts.map(post => <tr key={post.id}><td><Link to={`/posts/${post.slug}`}>{post.title}</Link></td><td>{new Date(post.createdAt).toLocaleDateString()}</td><td><div className="actions"><Link className="button ghost" to={`/posts/${post.id}/edit`}>Edit</Link><button className="button danger" onClick={() => void remove(post.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}<Pagination meta={meta} onPage={setPage} /></>;
+  const auth = useAuth();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Delete dialog state
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    try {
+      const r = await postsApi.list(page, auth.user.id);
+      setPosts(r.data.data);
+      setMeta(r.data.meta);
+      setError("");
+    } catch (e) {
+      setError(apiMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [auth.user, page]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await postsApi.remove(deleteId);
+      setDeleteId(null);
+      await load();
+    } catch (e) {
+      setDeleteError(apiMessage(e));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeading
+        title="My stories"
+        description="Manage, edit, or publish new stories written under your account."
+        action={
+          <Button asChild className="gap-2">
+            <Link to="/posts/new">
+              <Plus className="h-4 w-4" />
+              Write a story
+            </Link>
+          </Button>
+        }
+      />
+
+      {error && <ErrorState message={error} retry={load} />}
+
+      {loading ? (
+        <LoadingState label="Loading stories…" />
+      ) : posts.length === 0 ? (
+        <EmptyState>You have not published any stories yet.</EmptyState>
+      ) : (
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden md:block rounded-md border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[50%]">Title</TableHead>
+                  <TableHead>Published</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {posts.map((post) => (
+                  <TableRow key={post.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        to={`/posts/${post.slug}`}
+                        className="hover:underline text-foreground"
+                      >
+                        {post.title}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {formatDate(post.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link to={`/posts/${post.id}/edit`}>
+                            <PenSquare className="h-4 w-4 mr-1" /> Edit
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteId(post.id);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" /> Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4">
+            {posts.map((post) => (
+              <Card key={post.id} className="border-border">
+                <CardContent className="p-4 space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="font-semibold text-base">
+                      <Link
+                        to={`/posts/${post.slug}`}
+                        className="hover:underline text-foreground"
+                      >
+                        {post.title}
+                      </Link>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(post.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={`/posts/${post.id}/edit`}>
+                        <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteId(post.id);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+
+      <Pagination meta={meta} onPage={setPage} />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmActionDialog
+        open={Boolean(deleteId)}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Delete post?"
+        description="It will be hidden from readers. There is no restore action in this interface."
+        confirmLabel="Delete post"
+        variant="destructive"
+        isLoading={isDeleting}
+        error={deleteError}
+        onConfirm={confirmDelete}
+      />
+    </div>
+  );
 }
 
 export function AccountPage() {
-  const auth = useAuth(); const [search] = useSearchParams(); const [error, setError] = useState(search.get("oauthError") || "");
-  const link = async (provider: "google" | "facebook") => { try { window.location.href = (await authApi.link(provider)).data.data.authorizationUrl; } catch (e) { setError(apiMessage(e)); } };
+  const auth = useAuth();
+  const [search] = useSearchParams();
+  const [error, setError] = useState(search.get("oauthError") || "");
+
+  const link = async (provider: "google" | "facebook") => {
+    try {
+      window.location.href = (await authApi.link(provider)).data.data.authorizationUrl;
+    } catch (e) {
+      setError(apiMessage(e));
+    }
+  };
+
   if (!auth.user) return null;
-  return <section><p className="eyebrow">Your profile</p><h1>Account</h1>{search.get("linked") && <div className="alert success">{search.get("linked")} connected successfully.</div>}{error && <ErrorState message={error} />}<div className="profile-card"><dl><div><dt>Name</dt><dd>{auth.user.name}</dd></div><div><dt>Email</dt><dd>{auth.user.email ?? "Not provided"}</dd></div><div><dt>Role</dt><dd>{auth.user.role}</dd></div></dl><h2>Connected accounts</h2>{(["google", "facebook"] as const).map(provider => <div className="provider" key={provider}><span>{provider.charAt(0).toUpperCase() + provider.slice(1)}</span>{auth.user!.providers.includes(provider) ? <span className="chip success-chip">Connected</span> : <button className="button ghost" onClick={() => void link(provider)}>Connect</button>}</div>)}</div></section>;
+
+  return (
+    <div className="max-w-xl mx-auto space-y-6">
+      <PageHeading
+        title="Account Settings"
+        description="Manage your profile information and connected authentication providers."
+      />
+
+      {search.get("linked") && (
+        <Alert variant="success" className="py-3">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertTitle className="text-sm font-semibold">Success</AlertTitle>
+          <AlertDescription className="text-sm">
+            {search.get("linked")} account connected successfully.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {error && <ErrorState message={error} />}
+
+      {/* Profile Card */}
+      <Card className="border-border">
+        <CardHeader className="flex flex-row items-center gap-4 pb-4">
+          <UserAvatar name={auth.user.name} size="lg" />
+          <div className="space-y-1">
+            <CardTitle className="text-xl font-bold">{auth.user.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs font-semibold">
+                {auth.user.role}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-t border-border">
+            <span className="text-sm font-medium text-muted-foreground">Full Name</span>
+            <span className="sm:col-span-2 text-sm font-medium text-foreground">
+              {auth.user.name}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-t border-border">
+            <span className="text-sm font-medium text-muted-foreground">Email Address</span>
+            <span className="sm:col-span-2 text-sm font-medium text-foreground">
+              {auth.user.email ?? "Not provided"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-t border-border">
+            <span className="text-sm font-medium text-muted-foreground">Account Role</span>
+            <span className="sm:col-span-2 text-sm font-medium text-foreground">
+              {auth.user.role}
+            </span>
+          </div>
+
+          <Separator className="my-4" />
+
+          {/* Connected Accounts */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">
+              Connected Accounts
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Link external providers to log into Inkstone quickly.
+            </p>
+
+            <div className="space-y-2 pt-1">
+              {(["google", "facebook"] as const).map((provider) => {
+                const isConnected = auth.user!.providers.includes(provider);
+                const providerName =
+                  provider.charAt(0).toUpperCase() + provider.slice(1);
+
+                return (
+                  <div
+                    key={provider}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border bg-card"
+                  >
+                    <span className="text-sm font-medium text-foreground">
+                      {providerName}
+                    </span>
+                    {isConnected ? (
+                      <Badge variant="success" className="text-xs">
+                        Connected
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8"
+                        onClick={() => void link(provider)}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> Connect
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

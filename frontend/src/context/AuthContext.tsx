@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { authApi } from "../api";
 import { apiMessage, refreshAccess, setAccessToken, setAuthFailureHandler } from "../api/client";
 import type { User } from "../types/api";
@@ -16,14 +16,35 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<Status>("initializing");
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const authGenerationRef = useRef(0);
 
-  const accept = useCallback((payload: { user: User; accessToken: string }) => { setAccessToken(payload.accessToken); setUser(payload.user); setStatus("authenticated"); setError(null); }, []);
-  const clear = useCallback(() => { setAccessToken(null); setUser(null); setStatus("anonymous"); setError(null); }, []);
+  const accept = useCallback((payload: { user: User; accessToken: string }) => {
+    setAccessToken(payload.accessToken);
+    setUser(payload.user);
+    setStatus("authenticated");
+    setError(null);
+  }, []);
+
+  const clear = useCallback(() => {
+    authGenerationRef.current++;
+    setAccessToken(null);
+    setUser(null);
+    setStatus("anonymous");
+    setError(null);
+  }, []);
+
   const refreshSession = useCallback(async () => {
-    try { accept(await refreshAccess()); }
-    catch (caught: any) {
-      if (caught?.response?.status === 401) clear();
-      else { setStatus("error"); setError(apiMessage(caught)); }
+    const currentGen = authGenerationRef.current;
+    try {
+      const payload = await refreshAccess();
+      if (authGenerationRef.current === currentGen) {
+        accept(payload);
+      }
+    } catch (caught: any) {
+      if (authGenerationRef.current === currentGen) {
+        if (caught?.response?.status === 401) clear();
+        else { setStatus("error"); setError(apiMessage(caught)); }
+      }
       throw caught;
     }
   }, [accept, clear]);
@@ -35,12 +56,36 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => channel?.close();
   }, [clear]);
 
-  const login = async (input: { email: string; password: string }) => accept((await authApi.login(input)).data.data);
-  const register = async (input: { name: string; email: string; password: string }) => accept((await authApi.register(input)).data.data);
-  const logout = async () => {
-    await authApi.logout(); clear();
-    if (typeof BroadcastChannel !== "undefined") { const channel = new BroadcastChannel("mern-blog-auth"); channel.postMessage("logout"); channel.close(); }
+  const login = async (input: { email: string; password: string }) => {
+    const nextGen = ++authGenerationRef.current;
+    const response = await authApi.login(input);
+    if (authGenerationRef.current === nextGen) {
+      accept(response.data.data);
+    }
   };
+
+  const register = async (input: { name: string; email: string; password: string }) => {
+    const nextGen = ++authGenerationRef.current;
+    const response = await authApi.register(input);
+    if (authGenerationRef.current === nextGen) {
+      accept(response.data.data);
+    }
+  };
+
+  const logout = async () => {
+    authGenerationRef.current++;
+    try {
+      await authApi.logout();
+    } finally {
+      clear();
+      if (typeof BroadcastChannel !== "undefined") {
+        const channel = new BroadcastChannel("mern-blog-auth");
+        channel.postMessage("logout");
+        channel.close();
+      }
+    }
+  };
+
   const value = useMemo(() => ({ status, user, error, login, register, logout, refreshSession }), [status, user, error, refreshSession]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
