@@ -99,6 +99,8 @@ The default development URI is:
 mongodb://127.0.0.1:27017/mern_blog
 ```
 
+The Compose-managed MongoDB is bound to `127.0.0.1:27018` by default to avoid colliding with a locally installed MongoDB. Override `MONGODB_HOST_PORT` when invoking Compose if another host port is preferred; containers always use the internal `mongodb:27017` address.
+
 Create the declared indexes explicitly after the database is available:
 
 ```powershell
@@ -155,6 +157,57 @@ npm.cmd run dev:frontend
 ```
 
 Open `http://localhost:5173`. The API health endpoint is `http://localhost:5000/health`.
+
+## Docker Compose
+
+The Compose stack builds and runs the complete application:
+
+- MongoDB 8 with a persistent named volume
+- a one-shot database migration job that creates all declared indexes
+- the compiled Express/Socket.io backend
+- the compiled React frontend served by Nginx
+- an opt-in, idempotent development seed job
+
+Create `backend/.env` first and replace the example JWT secrets. The Compose file overrides container-only values such as the MongoDB hostname and the same-origin public URLs, while retaining credentials and optional OAuth settings from that file.
+
+Build and start MongoDB, run the migration, and start both applications:
+
+```powershell
+docker compose up --build -d
+```
+
+Open `http://localhost:5173`. Nginx serves the SPA and proxies `/api` and `/socket.io` to the backend. The backend waits for MongoDB and a successful migration before starting; the frontend waits for the backend health check.
+
+Load the idempotent development seed only when demo data is wanted:
+
+```powershell
+docker compose --profile tools run --rm seed
+```
+
+Rerun the migration/index job manually after a schema-index change:
+
+```powershell
+docker compose run --rm migrate
+```
+
+Inspect status and logs or stop the stack with:
+
+```powershell
+docker compose ps
+docker compose logs -f backend frontend
+docker compose down
+```
+
+The database volume survives `docker compose down`. Use `docker compose down --volumes` only when intentionally discarding all local database data.
+
+For OAuth in the Compose stack, register these local callback URLs with the providers:
+
+```text
+http://localhost:5173/api/v1/auth/google/callback
+http://localhost:5173/api/v1/auth/facebook/callback
+```
+
+This Compose configuration targets local development/demo use over HTTP, so it runs the compiled backend with `NODE_ENV=development` and non-secure local cookies. A public deployment must use HTTPS, secure cookies, production public URLs, and deployment-specific secrets.
 
 ## Production build
 

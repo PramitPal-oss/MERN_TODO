@@ -13,6 +13,7 @@
     "test:coverage": "jest --runInBand --coverage",
     "admin:create": "tsx scripts/create-admin.ts",
     "seed": "tsx scripts/seed.ts",
+    "reset-db": "tsx scripts/reset-db.ts",
     "db:indexes": "tsx scripts/create-indexes.ts"
   },
   "dependencies": {
