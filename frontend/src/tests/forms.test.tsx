@@ -6,6 +6,14 @@ import { StatCard } from "../components/StatCard";
 import { PostCard } from "../components/PostCard";
 import { UserAvatar } from "../components/UserAvatar";
 import type { Post } from "../types/api";
+import { vi } from "vitest";
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: vi.fn(() => ({
+    status: "anonymous",
+    user: null,
+  })),
+}));
 
 describe("Shared presentation components", () => {
   describe("PageHeading", () => {

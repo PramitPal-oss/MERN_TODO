@@ -5,7 +5,8 @@ const postSchema = new Schema({
   content: { type: String, required: true, trim: true, minlength: 1, maxlength: 50000 },
   slug: { type: String, required: true, lowercase: true, maxlength: 200, unique: true },
   author: { type: Schema.Types.ObjectId, ref: "User", required: true, immutable: true },
-  deletedAt: { type: Date, default: null }
+  deletedAt: { type: Date, default: null },
+  likedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] }
 }, { timestamps: true, strict: "throw" });
 
 postSchema.index({ deletedAt: 1, createdAt: -1, _id: -1 });

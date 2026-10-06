@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, User, LogOut, PenSquare, LayoutDashboard } from "lucide-react";
+import { Shield, User, LogOut, PenSquare, LayoutDashboard, Loader2 } from "lucide-react";
 
 export function Header() {
   const auth = useAuth();
@@ -40,7 +40,7 @@ export function Header() {
           {/* Brand */}
           <NavLink to="/" className="flex flex-col group">
             <span className="font-bold text-xl tracking-tight text-foreground group-hover:opacity-90">
-              Inkstone
+              BlogSphere
             </span>
             <span className="text-[11px] text-muted-foreground tracking-normal -mt-0.5">
               stories worth keeping
@@ -147,6 +147,10 @@ export function Header() {
                   </DropdownMenu>
                 </div>
               </>
+            ) : auth.status === "initializing" ? (
+              <div className="flex items-center justify-center w-[120px]">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
             ) : (
               <div className="flex items-center gap-3 pl-2">
                 <Button variant="ghost" size="sm" asChild>

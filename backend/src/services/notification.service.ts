@@ -130,3 +130,60 @@ export async function notifyCommentCreated(params: {
 
   return dto;
 }
+
+export async function notifyReplyCreated(params: {
+  recipientId: string;
+  actorId: string;
+  actorName: string;
+  postTitle: string;
+  postSlug: string;
+  postId: string;
+  commentId: string;
+}) {
+  const { recipientId, actorId, actorName, postTitle, postSlug, postId, commentId } = params;
+  if (recipientId === actorId) {
+    return null;
+  }
+
+  const message = `${actorName} replied to your comment on "${postTitle}"`.slice(0, 320);
+
+  let notification: any;
+  try {
+    notification = await Notification.create({
+      recipient: recipientId,
+      actor: actorId,
+      type: "NEW_REPLY",
+      message,
+      post: postId,
+      postSlug: postSlug.slice(0, 200),
+      comment: commentId,
+      isRead: false
+    });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      const existing = await Notification.findOne({
+        recipient: recipientId,
+        type: "NEW_REPLY",
+        comment: commentId
+      }).lean();
+      return existing ? notificationDto(existing) : null;
+    }
+    logger.error(
+      { recipientId, postId, commentId, err: error instanceof Error ? error.message : "Persistence failure" },
+      "Notification write failed; preserving reply success"
+    );
+    return null;
+  }
+
+  const dto = notificationDto(notification);
+  try {
+    await publishNotification(recipientId, dto);
+  } catch (error) {
+    logger.error(
+      { recipientId, postId, commentId, err: error instanceof Error ? error.message : "Publish failure" },
+      "Notification emission failed; retained in database for REST recovery"
+    );
+  }
+
+  return dto;
+}

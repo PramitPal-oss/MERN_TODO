@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { authApi } from "../api";
-import { apiMessage, refreshAccess, setAccessToken, setAuthFailureHandler } from "../api/client";
+import { apiMessage, refreshAccess, setAccessToken, setAuthFailureHandler, getAuthGeneration, nextAuthGeneration } from "../api/client";
 import type { User } from "../types/api";
 
 type Status = "initializing" | "authenticated" | "anonymous" | "error";
@@ -16,7 +16,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<Status>("initializing");
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const authGenerationRef = useRef(0);
 
   const accept = useCallback((payload: { user: User; accessToken: string }) => {
     setAccessToken(payload.accessToken);
@@ -26,7 +25,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const clear = useCallback(() => {
-    authGenerationRef.current++;
+    nextAuthGeneration();
     setAccessToken(null);
     setUser(null);
     setStatus("anonymous");
@@ -34,14 +33,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const refreshSession = useCallback(async () => {
-    const currentGen = authGenerationRef.current;
+    const currentGen = getAuthGeneration();
     try {
-      const payload = await refreshAccess();
-      if (authGenerationRef.current === currentGen) {
+      const payload = await refreshAccess(currentGen);
+      if (getAuthGeneration() === currentGen) {
         accept(payload);
       }
     } catch (caught: any) {
-      if (authGenerationRef.current === currentGen) {
+      if (getAuthGeneration() === currentGen) {
         if (caught?.response?.status === 401) clear();
         else { setStatus("error"); setError(apiMessage(caught)); }
       }
@@ -57,23 +56,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [clear]);
 
   const login = async (input: { email: string; password: string }) => {
-    const nextGen = ++authGenerationRef.current;
+    const nextGen = nextAuthGeneration();
     const response = await authApi.login(input);
-    if (authGenerationRef.current === nextGen) {
+    if (getAuthGeneration() === nextGen) {
       accept(response.data.data);
     }
   };
 
   const register = async (input: { name: string; email: string; password: string }) => {
-    const nextGen = ++authGenerationRef.current;
+    const nextGen = nextAuthGeneration();
     const response = await authApi.register(input);
-    if (authGenerationRef.current === nextGen) {
+    if (getAuthGeneration() === nextGen) {
       accept(response.data.data);
     }
   };
 
   const logout = async () => {
-    authGenerationRef.current++;
+    nextAuthGeneration();
     try {
       await authApi.logout();
     } finally {

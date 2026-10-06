@@ -12,6 +12,8 @@ import { Pagination } from "../components/Pagination";
 import { PageHeading } from "../components/PageHeading";
 import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
 import { UserAvatar } from "../components/UserAvatar";
+import { useMutation } from "../hooks/useMutation";
+import { useOAuthProviders } from "../components/auth/SocialAuthButtons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,17 +92,14 @@ export function PostEditorPage() {
       .finally(() => setLoading(false));
   }, [id, auth.user, navigate, reset]);
 
-  const submit = handleSubmit(async (values) => {
-    setError("");
-    try {
-      const post = id
-        ? (await postsApi.update(id, values)).data.data
-        : (await postsApi.create(values)).data.data;
-      navigate(`/posts/${post.slug}`);
-    } catch (e) {
-      setError(apiMessage(e));
-    }
+  const submitMutation = useMutation(async (values: Input) => {
+    const post = id
+      ? (await postsApi.update(id, values)).data.data
+      : (await postsApi.create(values)).data.data;
+    navigate(`/posts/${post.slug}`);
   });
+
+  const submit = handleSubmit((values) => submitMutation.mutate(values));
 
   if (loading) return <LoadingState label="Loading editor…" />;
 
@@ -116,6 +115,7 @@ export function PostEditorPage() {
       />
 
       {error && <ErrorState message={error} />}
+      {submitMutation.error && <ErrorState message={submitMutation.error} />}
 
       <Card className="border-border shadow-sm">
         <form onSubmit={submit}>
@@ -164,13 +164,13 @@ export function PostEditorPage() {
               type="button"
               variant="outline"
               onClick={() => navigate(-1)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || submitMutation.isSubmitting}
             >
               Cancel
             </Button>
 
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={isSubmitting || submitMutation.isSubmitting}>
+              {(isSubmitting || submitMutation.isSubmitting) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {id ? "Save changes" : "Publish post"}
             </Button>
           </CardFooter>
@@ -190,7 +190,6 @@ export function MyPostsPage() {
 
   // Delete dialog state
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -214,16 +213,16 @@ export function MyPostsPage() {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
+    const id = deleteId;
+    setDeleteId(null);
     setDeleteError(null);
+    
+    setPosts((prev) => prev.filter((p) => p.id !== id));
     try {
-      await postsApi.remove(deleteId);
-      setDeleteId(null);
-      await load();
+      await postsApi.remove(id);
     } catch (e) {
       setDeleteError(apiMessage(e));
-    } finally {
-      setIsDeleting(false);
+      await load();
     }
   };
 
@@ -353,7 +352,7 @@ export function MyPostsPage() {
         description="It will be hidden from readers. There is no restore action in this interface."
         confirmLabel="Delete post"
         variant="destructive"
-        isLoading={isDeleting}
+        isLoading={false}
         error={deleteError}
         onConfirm={confirmDelete}
       />
@@ -365,14 +364,11 @@ export function AccountPage() {
   const auth = useAuth();
   const [search] = useSearchParams();
   const [error, setError] = useState(search.get("oauthError") || "");
+  const { providers, status, load } = useOAuthProviders();
 
-  const link = async (provider: "google" | "facebook") => {
-    try {
-      window.location.href = (await authApi.link(provider)).data.data.authorizationUrl;
-    } catch (e) {
-      setError(apiMessage(e));
-    }
-  };
+  const linkMutation = useMutation(async (provider: "google" | "facebook") => {
+    window.location.href = (await authApi.link(provider)).data.data.authorizationUrl;
+  });
 
   if (!auth.user) return null;
 
@@ -394,6 +390,7 @@ export function AccountPage() {
       )}
 
       {error && <ErrorState message={error} />}
+      {linkMutation.error && <ErrorState message={linkMutation.error} />}
 
       {/* Profile Card */}
       <Card className="border-border">
@@ -443,8 +440,22 @@ export function AccountPage() {
             </p>
 
             <div className="space-y-2 pt-1">
-              {(["google", "facebook"] as const).map((provider) => {
+              {status === "loading" && (
+                <div className="flex justify-center p-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {status === "error" && (
+                <Alert variant="destructive" className="py-2.5">
+                  <AlertDescription className="flex items-center justify-between text-sm">
+                    Failed to load providers.
+                    <Button variant="outline" size="sm" onClick={load} className="h-7 px-2">Retry</Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {status === "ready" && (["google", "facebook"] as const).map((provider) => {
                 const isConnected = auth.user!.providers.includes(provider);
+                const isAvailable = providers[provider];
                 const providerName =
                   provider.charAt(0).toUpperCase() + provider.slice(1);
 
@@ -465,9 +476,11 @@ export function AccountPage() {
                         variant="outline"
                         size="sm"
                         className="text-xs h-8"
-                        onClick={() => void link(provider)}
+                        disabled={!isAvailable || linkMutation.isSubmitting}
+                        onClick={() => linkMutation.mutate(provider)}
                       >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> Connect
+                        {linkMutation.isSubmitting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        {!isAvailable && !linkMutation.isSubmitting ? <><ExternalLink className="h-3.5 w-3.5 mr-1" /> Unavailable</> : <><ExternalLink className="h-3.5 w-3.5 mr-1" /> Connect</>}
                       </Button>
                     )}
                   </div>

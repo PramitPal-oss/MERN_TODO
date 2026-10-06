@@ -13,13 +13,19 @@ export const postsApi = {
   get: (id: string) => apiClient.get<ApiResponse<Post>>(`/posts/${id}`),
   create: (body: { title: string; content: string }) => apiClient.post<ApiResponse<Post>>("/posts", body),
   update: (id: string, body: { title: string; content: string }) => apiClient.patch<ApiResponse<Post>>(`/posts/${id}`, body),
-  remove: (id: string) => apiClient.delete(`/posts/${id}`, { data: {} })
+  remove: (id: string) => apiClient.delete(`/posts/${id}`, { data: {} }),
+  like: (id: string) => apiClient.put<ApiResponse<{ id: string; likeCount: number; likedByMe: boolean }>>(`/posts/${id}/like`),
+  unlike: (id: string) => apiClient.delete<ApiResponse<{ id: string; likeCount: number; likedByMe: boolean }>>(`/posts/${id}/like`)
 };
 export const commentsApi = {
-  list: (postId: string, page = 1) => apiClient.get<ApiResponse<Comment[]>>(`/posts/${postId}/comments`, { params: { page, limit: 10 } }),
+  list: (postId: string, page = 1, view: "flat" | "threads" = "flat") => apiClient.get<ApiResponse<Comment[]>>(`/posts/${postId}/comments`, { params: { page, limit: 10, view } }),
   create: (postId: string, content: string) => apiClient.post<ApiResponse<Comment>>(`/posts/${postId}/comments`, { content }),
+  listReplies: (id: string, page = 1) => apiClient.get<ApiResponse<Comment[]>>(`/comments/${id}/replies`, { params: { page, limit: 10 } }),
+  createReply: (id: string, content: string) => apiClient.post<ApiResponse<Comment>>(`/comments/${id}/replies`, { content }),
   update: (id: string, content: string) => apiClient.patch<ApiResponse<Comment>>(`/comments/${id}`, { content }),
-  remove: (id: string) => apiClient.delete(`/comments/${id}`, { data: {} })
+  remove: (id: string) => apiClient.delete(`/comments/${id}`, { data: {} }),
+  like: (id: string) => apiClient.put<ApiResponse<{ id: string; likeCount: number; likedByMe: boolean }>>(`/comments/${id}/like`),
+  unlike: (id: string) => apiClient.delete<ApiResponse<{ id: string; likeCount: number; likedByMe: boolean }>>(`/comments/${id}/like`)
 };
 export const notificationsApi = {
   list: (page = 1, limit = 10) => apiClient.get<ApiResponse<NotificationsData>>("/notifications", { params: { page, limit } }),

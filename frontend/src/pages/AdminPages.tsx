@@ -10,6 +10,9 @@ import { StatCard } from "../components/StatCard";
 import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
 import { EditCommentDialog } from "../components/EditCommentDialog";
 import { UserAvatar } from "../components/UserAvatar";
+import { DataGrid } from "../components/DataGrid";
+import { useQuery } from "../hooks/useQuery";
+import { useMutation } from "../hooks/useMutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,29 +48,7 @@ import {
 } from "lucide-react";
 
 export function AdminDashboardPage() {
-  const [stats, setStats] = useState<{
-    totalUsers: number;
-    totalPosts: number;
-    totalComments: number;
-  } | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setStats((await adminApi.stats()).data.data);
-      setError("");
-    } catch (e) {
-      setError(apiMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data: stats, loading, error, refresh } = useQuery(async () => (await adminApi.stats()).data.data);
 
   return (
     <div className="space-y-8">
@@ -77,7 +58,7 @@ export function AdminDashboardPage() {
       />
 
       {error ? (
-        <ErrorState message={error} retry={load} />
+        <ErrorState message={error} retry={refresh} />
       ) : loading || !stats ? (
         <LoadingState label="Loading admin statistics…" />
       ) : (
@@ -174,67 +155,183 @@ export function AdminDashboardPage() {
   );
 }
 
-export function AdminUsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [page, setPage] = useState(1);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  // Deactivate dialog state
+function UsersTable({ users, refresh, setData }: { users: User[], refresh: () => Promise<void>, setData: React.Dispatch<React.SetStateAction<User[]>> }) {
   const [deactivatingUser, setDeactivatingUser] = useState<User | null>(null);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await adminApi.users(page);
-      setUsers(r.data.data);
-      setMeta(r.data.meta);
-      setError("");
-    } catch (e) {
-      setError(apiMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const toggleUserStatus = async (user: User) => {
     if (user.isActive) {
-      // Opening deactivation confirmation dialog
       setStatusError(null);
       setDeactivatingUser(user);
     } else {
-      // Reactivate immediately
+      setData((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: true } : u)));
       try {
         await adminApi.updateUser(user.id, { isActive: true });
-        await load();
       } catch (e) {
-        setError(apiMessage(e));
+        setStatusError(apiMessage(e));
+        setData((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: false } : u)));
       }
     }
   };
 
   const confirmDeactivate = async () => {
     if (!deactivatingUser) return;
-    setIsUpdatingStatus(true);
+    const user = deactivatingUser;
+    setDeactivatingUser(null);
     setStatusError(null);
+    
+    setData((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: false } : u)));
     try {
-      await adminApi.updateUser(deactivatingUser.id, { isActive: false });
-      setDeactivatingUser(null);
-      await load();
+      await adminApi.updateUser(user.id, { isActive: false });
     } catch (e) {
       setStatusError(apiMessage(e));
-    } finally {
-      setIsUpdatingStatus(false);
+      setData((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: true } : u)));
     }
   };
 
+  return (
+    <>
+      {statusError && !deactivatingUser && (
+        <ErrorState message={statusError} />
+      )}
+      <div className="hidden md:block rounded-md border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[40%]">User</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <UserAvatar name={user.name} size="sm" />
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">
+                        {user.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {user.email ?? "No email"}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={user.role === "ADMIN" ? "default" : "outline"}
+                    className="text-xs"
+                  >
+                    {user.role}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={user.isActive ? "success" : "secondary"}
+                    className="text-xs"
+                  >
+                    {user.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/admin/users/${user.id}/edit`}>
+                        <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={user.isProtectedAdmin}
+                      className={
+                        user.isActive
+                          ? "text-destructive hover:text-destructive hover:bg-destructive/10"
+                          : "text-foreground hover:bg-secondary"
+                      }
+                      onClick={() => void toggleUserStatus(user)}
+                    >
+                      {user.isActive ? "Deactivate" : "Reactivate"}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="md:hidden space-y-4">
+        {users.map((user) => (
+          <Card key={user.id} className="border-border">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserAvatar name={user.name} size="sm" />
+                  <div>
+                    <p className="font-semibold text-sm">{user.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {user.email ?? "No email"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-[10px]">
+                    {user.role}
+                  </Badge>
+                  <Badge
+                    variant={user.isActive ? "success" : "secondary"}
+                    className="text-[10px]"
+                  >
+                    {user.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={`/admin/users/${user.id}/edit`}>
+                    <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={user.isProtectedAdmin}
+                  className={
+                    user.isActive
+                      ? "text-destructive border-destructive/30 hover:bg-destructive/10"
+                      : ""
+                  }
+                  onClick={() => void toggleUserStatus(user)}
+                >
+                  {user.isActive ? "Deactivate" : "Reactivate"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <ConfirmActionDialog
+        open={Boolean(deactivatingUser)}
+        onOpenChange={(open) => !open && setDeactivatingUser(null)}
+        title="Deactivate user?"
+        description="They will lose access to the application. You can reactivate their account later if needed."
+        confirmLabel="Deactivate"
+        variant="destructive"
+        isLoading={false}
+        error={statusError}
+        onConfirm={confirmDeactivate}
+      />
+    </>
+  );
+}
+
+export function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <PageHeading
@@ -250,153 +347,11 @@ export function AdminUsersPage() {
         }
       />
 
-      {error && <ErrorState message={error} />}
-
-      {loading ? (
-        <LoadingState label="Loading users…" />
-      ) : users.length === 0 ? (
-        <EmptyState>No user accounts found.</EmptyState>
-      ) : (
-        <>
-          {/* Desktop Table */}
-          <div className="hidden md:block rounded-md border border-border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[40%]">User</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <UserAvatar name={user.name} size="sm" />
-                        <div>
-                          <p className="font-semibold text-foreground text-sm">
-                            {user.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {user.email ?? "No email"}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={user.role === "ADMIN" ? "default" : "outline"}
-                        className="text-xs"
-                      >
-                        {user.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={user.isActive ? "success" : "secondary"}
-                        className="text-xs"
-                      >
-                        {user.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link to={`/admin/users/${user.id}/edit`}>
-                            <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={user.isProtectedAdmin}
-                          className={
-                            user.isActive
-                              ? "text-destructive hover:text-destructive hover:bg-destructive/10"
-                              : "text-foreground hover:bg-secondary"
-                          }
-                          onClick={() => void toggleUserStatus(user)}
-                        >
-                          {user.isActive ? "Deactivate" : "Reactivate"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Mobile Card List */}
-          <div className="md:hidden space-y-4">
-            {users.map((user) => (
-              <Card key={user.id} className="border-border">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar name={user.name} size="sm" />
-                      <div>
-                        <p className="font-semibold text-sm">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {user.email ?? "No email"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[10px]">
-                        {user.role}
-                      </Badge>
-                      <Badge
-                        variant={user.isActive ? "success" : "secondary"}
-                        className="text-[10px]"
-                      >
-                        {user.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/admin/users/${user.id}/edit`}>
-                        <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={user.isProtectedAdmin}
-                      className={
-                        user.isActive
-                          ? "text-destructive border-destructive/30 hover:bg-destructive/10"
-                          : ""
-                      }
-                      onClick={() => void toggleUserStatus(user)}
-                    >
-                      {user.isActive ? "Deactivate" : "Reactivate"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      <Pagination meta={meta} onPage={setPage} />
-
-      {/* Deactivate User Confirmation Dialog */}
-      <ConfirmActionDialog
-        open={Boolean(deactivatingUser)}
-        onOpenChange={(open) => !open && setDeactivatingUser(null)}
-        title="Deactivate user?"
-        description="They will lose access to the application. You can reactivate their account later if needed."
-        confirmLabel="Deactivate"
-        variant="destructive"
-        isLoading={isUpdatingStatus}
-        error={statusError}
-        onConfirm={confirmDeactivate}
+      <DataGrid<User>
+        fetcher={async (page) => (await adminApi.users(page)).data}
+        loadingLabel="Loading users…"
+        emptyMessage="No user accounts found."
+        render={(users, refresh, setData) => <UsersTable users={users} refresh={refresh} setData={setData} />}
       />
     </div>
   );
@@ -414,7 +369,6 @@ export function AdminUserFormPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(id));
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -434,32 +388,28 @@ export function AdminUserFormPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const submitMutation = useMutation(async () => {
+    if (id) {
+      await adminApi.updateUser(id, {
+        name: form.name,
+        email: form.email,
+        role: form.role,
+        isActive: form.isActive,
+      });
+    } else {
+      await adminApi.createUser({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        role: form.role,
+      });
+    }
+    navigate("/admin/users");
+  });
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setSubmitting(true);
-    setError("");
-    try {
-      if (id) {
-        await adminApi.updateUser(id, {
-          name: form.name,
-          email: form.email,
-          role: form.role,
-          isActive: form.isActive,
-        });
-      } else {
-        await adminApi.createUser({
-          name: form.name,
-          email: form.email,
-          password: form.password,
-          role: form.role,
-        });
-      }
-      navigate("/admin/users");
-    } catch (e) {
-      setError(apiMessage(e));
-    } finally {
-      setSubmitting(false);
-    }
+    await submitMutation.mutate();
   };
 
   if (loading) return <LoadingState label="Loading user details…" />;
@@ -476,6 +426,7 @@ export function AdminUserFormPage() {
       />
 
       {error && <ErrorState message={error} />}
+      {submitMutation.error && <ErrorState message={submitMutation.error} />}
 
       <Card className="border-border shadow-sm">
         <form onSubmit={submit}>
@@ -556,12 +507,12 @@ export function AdminUserFormPage() {
               type="button"
               variant="outline"
               onClick={() => navigate(-1)}
-              disabled={submitting}
+              disabled={submitMutation.isSubmitting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={submitMutation.isSubmitting}>
+              {submitMutation.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {id ? "Save user" : "Create user"}
             </Button>
           </CardFooter>
@@ -571,51 +522,155 @@ export function AdminUserFormPage() {
   );
 }
 
-export function AdminPostsPage() {
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState("active");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  // Soft-delete dialog state
+function PostsTable({ posts, refresh, setData }: { posts: Post[], refresh: () => Promise<void>, setData: React.Dispatch<React.SetStateAction<Post[]>> }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await adminApi.posts(page, status);
-      setPosts(r.data.data);
-      setMeta(r.data.meta);
-      setError("");
-    } catch (e) {
-      setError(apiMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [page, status]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const confirmRemove = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
+    const id = deleteId;
+    setDeleteId(null);
     setDeleteError(null);
+    
+    setData((prev) => prev.map((p) => (p.id === id ? { ...p, deletedAt: new Date().toISOString() } : p)));
     try {
-      await postsApi.remove(deleteId);
-      setDeleteId(null);
-      await load();
+      await postsApi.remove(id);
     } catch (e) {
       setDeleteError(apiMessage(e));
-    } finally {
-      setIsDeleting(false);
+      setData((prev) => prev.map((p) => (p.id === id ? { ...p, deletedAt: null as any } : p)));
     }
   };
+
+  return (
+    <>
+      <div className="hidden md:block rounded-md border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[45%]">Post</TableHead>
+              <TableHead>Author</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {posts.map((post) => (
+              <TableRow key={post.id}>
+                <TableCell className="font-medium text-foreground">
+                  {post.title}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {post.author.name}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={post.deletedAt ? "secondary" : "success"}
+                    className="text-xs"
+                  >
+                    {post.deletedAt ? "Deleted" : "Active"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {!post.deletedAt && (
+                      <>
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link to={`/posts/${post.slug}`}>
+                            <ExternalLink className="h-3.5 w-3.5 mr-1" /> View
+                          </Link>
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link to={`/posts/${post.id}/edit`}>
+                            <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleteId(post.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="md:hidden space-y-4">
+        {posts.map((post) => (
+          <Card key={post.id} className="border-border">
+            <CardContent className="p-4 space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge
+                    variant={post.deletedAt ? "secondary" : "success"}
+                    className="text-[10px]"
+                  >
+                    {post.deletedAt ? "Deleted" : "Active"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {post.author.name}
+                  </span>
+                </div>
+                <h3 className="font-semibold text-base">{post.title}</h3>
+              </div>
+
+              {!post.deletedAt && (
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to={`/posts/${post.slug}`}>
+                      <ExternalLink className="h-3.5 w-3.5 mr-1" /> View
+                    </Link>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to={`/posts/${post.id}/edit`}>
+                      <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteId(post.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <ConfirmActionDialog
+        open={Boolean(deleteId)}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Delete post?"
+        description="It will be hidden from readers. There is no restore action in this interface."
+        confirmLabel="Delete post"
+        variant="destructive"
+        isLoading={false}
+        error={deleteError}
+        onConfirm={confirmRemove}
+      />
+    </>
+  );
+}
+
+export function AdminPostsPage() {
+  const [status, setStatus] = useState("active");
 
   return (
     <div className="space-y-6">
@@ -638,10 +693,7 @@ export function AdminPostsPage() {
             aria-label="Post status filter"
             value={status}
             className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setStatus(e.target.value)}
           >
             <option value="active">Active</option>
             <option value="deleted">Deleted</option>
@@ -650,308 +702,98 @@ export function AdminPostsPage() {
         </div>
       </div>
 
-      {error && <ErrorState message={error} retry={load} />}
-
-      {loading ? (
-        <LoadingState label="Loading stories…" />
-      ) : posts.length === 0 ? (
-        <EmptyState>No stories found matching this status.</EmptyState>
-      ) : (
-        <>
-          {/* Desktop Table */}
-          <div className="hidden md:block rounded-md border border-border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[45%]">Post</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {posts.map((post) => (
-                  <TableRow key={post.id}>
-                    <TableCell className="font-medium text-foreground">
-                      {post.title}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {post.author.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={post.deletedAt ? "secondary" : "success"}
-                        className="text-xs"
-                      >
-                        {post.deletedAt ? "Deleted" : "Active"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {!post.deletedAt && (
-                          <>
-                            <Button variant="ghost" size="sm" asChild>
-                              <Link to={`/posts/${post.slug}`}>
-                                <ExternalLink className="h-3.5 w-3.5 mr-1" /> View
-                              </Link>
-                            </Button>
-                            <Button variant="ghost" size="sm" asChild>
-                              <Link to={`/posts/${post.id}/edit`}>
-                                <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
-                              </Link>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                setDeleteError(null);
-                                setDeleteId(post.id);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Mobile Card List */}
-          <div className="md:hidden space-y-4">
-            {posts.map((post) => (
-              <Card key={post.id} className="border-border">
-                <CardContent className="p-4 space-y-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge
-                        variant={post.deletedAt ? "secondary" : "success"}
-                        className="text-[10px]"
-                      >
-                        {post.deletedAt ? "Deleted" : "Active"}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {post.author.name}
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-base">{post.title}</h3>
-                  </div>
-
-                  {!post.deletedAt && (
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to={`/posts/${post.slug}`}>
-                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> View
-                        </Link>
-                      </Button>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to={`/posts/${post.id}/edit`}>
-                          <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteId(post.id);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      <Pagination meta={meta} onPage={setPage} />
-
-      {/* Soft-delete Confirmation Dialog */}
-      <ConfirmActionDialog
-        open={Boolean(deleteId)}
-        onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Delete post?"
-        description="It will be hidden from readers. There is no restore action in this interface."
-        confirmLabel="Delete post"
-        variant="destructive"
-        isLoading={isDeleting}
-        error={deleteError}
-        onConfirm={confirmRemove}
+      <DataGrid<Post>
+        dependencies={[status]}
+        fetcher={async (page) => (await adminApi.posts(page, status)).data}
+        loadingLabel="Loading stories…"
+        emptyMessage="No stories found matching this status."
+        render={(posts, refresh, setData) => <PostsTable posts={posts} refresh={refresh} setData={setData} />}
       />
     </div>
   );
 }
 
-export function AdminCommentsPage() {
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [page, setPage] = useState(1);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  // Edit comment dialog state
+function CommentsTable({ comments, refresh, setData }: { comments: Comment[], refresh: () => Promise<void>, setData: React.Dispatch<React.SetStateAction<Comment[]>> }) {
   const [editingComment, setEditingComment] = useState<Comment | null>(null);
-
-  // Delete comment dialog state
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await adminApi.comments(page);
-      setComments(r.data.data);
-      setMeta(r.data.meta);
-      setError("");
-    } catch (e) {
-      setError(apiMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    setIsDeleting(true);
+    const id = deleteId;
+    setDeleteId(null);
     setDeleteError(null);
+    
+    // Optimistically remove comment from the list
+    setData((prev) => prev.filter((c) => c.id !== id));
+    
     try {
-      await commentsApi.remove(deleteId);
-      setDeleteId(null);
-      await load();
+      await commentsApi.remove(id);
     } catch (e) {
       setDeleteError(apiMessage(e));
-    } finally {
-      setIsDeleting(false);
+      await refresh(); // Revert by refetching is safer for deletes if we don't store the deleted comment
     }
   };
 
   const handleSaveComment = async (newContent: string) => {
     if (!editingComment) return;
-    await commentsApi.update(editingComment.id, newContent);
-    await load();
+    const id = editingComment.id;
+    const oldContent = editingComment.content;
+    setEditingComment(null);
+    
+    setData((prev) => prev.map((c) => (c.id === id ? { ...c, content: newContent } : c)));
+    try {
+      await commentsApi.update(id, newContent);
+    } catch (e) {
+      setDeleteError(apiMessage(e));
+      setData((prev) => prev.map((c) => (c.id === id ? { ...c, content: oldContent } : c)));
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeading
-        title="Comment Moderation"
-        description="Review community feedback, edit inappropriate text, or remove comments."
-      />
-
-      {error && <ErrorState message={error} retry={load} />}
-
-      {loading ? (
-        <LoadingState label="Loading comments…" />
-      ) : comments.length === 0 ? (
-        <EmptyState>No comments found for moderation.</EmptyState>
-      ) : (
-        <>
-          {/* Desktop Table */}
-          <div className="hidden md:block rounded-md border border-border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[45%]">Comment</TableHead>
-                  <TableHead className="w-[25%]">Story</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {comments.map((comment) => (
-                  <TableRow key={comment.id}>
-                    <TableCell className="font-medium text-foreground">
-                      <p className="line-clamp-2 text-sm">{comment.content}</p>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      <span className="line-clamp-1">
-                        {comment.post?.title ?? comment.postId}
-                      </span>
-                      {comment.post?.deletedAt && (
-                        <Badge variant="secondary" className="text-[10px] mt-1">
-                          Deleted post
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm font-medium">
-                      {comment.author.name}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditingComment(comment)}
-                        >
-                          <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => {
-                            setDeleteError(null);
-                            setDeleteId(comment.id);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Mobile Card List */}
-          <div className="md:hidden space-y-4">
+    <>
+      <div className="hidden md:block rounded-md border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[45%]">Comment</TableHead>
+              <TableHead className="w-[25%]">Story</TableHead>
+              <TableHead>Author</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {comments.map((comment) => (
-              <Card key={comment.id} className="border-border">
-                <CardContent className="p-4 space-y-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>By {comment.author.name}</span>
-                      {comment.post?.deletedAt && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          Deleted post
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground font-medium">
-                      On: {comment.post?.title ?? comment.postId}
-                    </p>
-                    <p className="text-sm text-foreground pt-1">
-                      {comment.content}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <TableRow key={comment.id}>
+                <TableCell className="font-medium text-foreground">
+                  <p className="line-clamp-2 text-sm">{comment.content}</p>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  <span className="line-clamp-1">
+                    {comment.post?.title ?? comment.postId}
+                  </span>
+                  {comment.post?.deletedAt && (
+                    <Badge variant="secondary" className="text-[10px] mt-1">
+                      Deleted post
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm font-medium">
+                  {comment.author?.name || "[deleted]"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-2">
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => setEditingComment(comment)}
                     >
                       <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={() => {
                         setDeleteError(null);
                         setDeleteId(comment.id);
@@ -960,16 +802,59 @@ export function AdminCommentsPage() {
                       <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
+                </TableCell>
+              </TableRow>
             ))}
-          </div>
-        </>
-      )}
+          </TableBody>
+        </Table>
+      </div>
 
-      <Pagination meta={meta} onPage={setPage} />
+      <div className="md:hidden space-y-4">
+        {comments.map((comment) => (
+          <Card key={comment.id} className="border-border">
+            <CardContent className="p-4 space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>By {comment.author?.name || "[deleted]"}</span>
+                  {comment.post?.deletedAt && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      Deleted post
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  On: {comment.post?.title ?? comment.postId}
+                </p>
+                <p className="text-sm text-foreground pt-1">
+                  {comment.content}
+                </p>
+              </div>
 
-      {/* Edit Comment Dialog */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingComment(comment)}
+                >
+                  <PenSquare className="h-3.5 w-3.5 mr-1" /> Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteId(comment.id);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <EditCommentDialog
         open={Boolean(editingComment)}
         onOpenChange={(open) => !open && setEditingComment(null)}
@@ -977,7 +862,6 @@ export function AdminCommentsPage() {
         onSave={handleSaveComment}
       />
 
-      {/* Delete Comment Confirmation Dialog */}
       <ConfirmActionDialog
         open={Boolean(deleteId)}
         onOpenChange={(open) => !open && setDeleteId(null)}
@@ -985,9 +869,27 @@ export function AdminCommentsPage() {
         description="This permanently removes the comment. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
-        isLoading={isDeleting}
+        isLoading={false}
         error={deleteError}
         onConfirm={confirmDelete}
+      />
+    </>
+  );
+}
+
+export function AdminCommentsPage() {
+  return (
+    <div className="space-y-6">
+      <PageHeading
+        title="Comment Moderation"
+        description="Review community feedback, edit inappropriate text, or remove comments."
+      />
+
+      <DataGrid<Comment>
+        fetcher={async (page) => (await adminApi.comments(page)).data}
+        loadingLabel="Loading comments…"
+        emptyMessage="No comments found for moderation."
+        render={(comments, refresh, setData) => <CommentsTable comments={comments} refresh={refresh} setData={setData} />}
       />
     </div>
   );

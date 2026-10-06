@@ -54,7 +54,7 @@ describe("Header and Navigation", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Inkstone")).toBeInTheDocument();
+    expect(screen.getByText("BlogSphere")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Stories" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Log in" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Join" })).toBeInTheDocument();

@@ -2,7 +2,9 @@ import { Link } from "react-router-dom";
 import type { Post } from "@/types/api";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { UserAvatar } from "@/components/UserAvatar";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, MessageSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { LikeButton } from "./LikeButton";
 
 export interface PostCardProps {
   post: Post;
@@ -39,10 +41,22 @@ export function PostCard({ post }: PostCardProps) {
         </p>
       </div>
 
-      <CardFooter className="p-0 pt-2 flex items-center">
+
+
+      <CardFooter className="p-0 pt-2 flex items-center justify-between border-t border-border mt-2 pt-4">
+        <div className="flex items-center gap-2">
+          <LikeButton id={post.id} type="post" initialLikeCount={post.likeCount} initialLikedByMe={post.likedByMe} />
+          
+          <Button variant="ghost" size="sm" className="gap-1.5 h-8 px-2 text-muted-foreground hover:text-foreground" asChild>
+            <Link to={`/posts/${post.slug}#comments`}>
+              <MessageSquare className="h-4 w-4" />
+              <span className="text-xs font-medium">{post.commentCount || 0}</span>
+            </Link>
+          </Button>
+        </div>
         <Link
           to={`/posts/${post.slug}`}
-          className="inline-flex items-center gap-1 text-sm font-semibold text-foreground hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
         >
           Read story <ArrowRight className="h-3.5 w-3.5" />
         </Link>

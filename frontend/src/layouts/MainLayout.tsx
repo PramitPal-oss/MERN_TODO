@@ -20,7 +20,7 @@ export function MainLayout() {
 
       <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground mt-auto">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Inkstone · stories worth keeping</span>
+          <span>BlogSphere · stories worth keeping</span>
           <span>Built with the MERN stack</span>
         </div>
       </footer>

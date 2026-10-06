@@ -39,45 +39,7 @@ const registerSchema = z.object({
 type Login = z.infer<typeof loginSchema>;
 type Register = z.infer<typeof registerSchema>;
 
-function SocialButtons() {
-  const [providers, setProviders] = useState({ google: false, facebook: false });
-
-  useEffect(() => {
-    void authApi
-      .providers()
-      .then((r) => setProviders(r.data.data))
-      .catch(() => undefined);
-  }, []);
-
-  const base = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1";
-
-  return (
-    <div className="flex flex-col gap-2 w-full">
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full justify-center"
-        disabled={!providers.google}
-        onClick={() => {
-          window.location.href = `${base}/auth/google`;
-        }}
-      >
-        Continue with Google {!providers.google && "(unavailable)"}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full justify-center"
-        disabled={!providers.facebook}
-        onClick={() => {
-          window.location.href = `${base}/auth/facebook`;
-        }}
-      >
-        Continue with Facebook {!providers.facebook && "(unavailable)"}
-      </Button>
-    </div>
-  );
-}
+import { SocialAuthButtons } from "../components/auth/SocialAuthButtons";
 
 export function LoginPage() {
   const auth = useAuth();
@@ -182,7 +144,7 @@ export function LoginPage() {
             </div>
           </div>
 
-          <SocialButtons />
+          <SocialAuthButtons />
         </CardContent>
 
         <CardFooter className="flex justify-center border-t pt-4">
@@ -299,6 +261,17 @@ export function RegisterPage() {
               {isSubmitting ? "Creating account…" : "Create account"}
             </Button>
           </form>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <Separator />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">or continue with</span>
+            </div>
+          </div>
+
+          <SocialAuthButtons />
         </CardContent>
 
         <CardFooter className="flex justify-center border-t pt-4">

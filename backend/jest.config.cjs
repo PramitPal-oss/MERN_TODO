@@ -1,6 +1,7 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src/tests'],
+  setupFiles: ['<rootDir>/src/tests/setEnvVars.ts'],
   setupFilesAfterEnv: ['<rootDir>/src/tests/setup.ts'],
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },

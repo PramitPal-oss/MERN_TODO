@@ -7,12 +7,7 @@ import { RefreshSession } from "../models/refresh-session.model.js";
 import { OAuthTransaction } from "../models/oauth-transaction.model.js";
 import { Notification } from "../models/notification.model.js";
 
-process.env.JWT_ACCESS_SECRET ??= "test-access-secret-at-least-32-characters";
-process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret-at-least-32-characters";
-process.env.AUTH_RATE_MAX = "1000";
-process.env.LOGIN_RATE_MAX = "1000";
-process.env.REGISTER_RATE_MAX = "1000";
-process.env.OAUTH_RATE_MAX = "1000";
+
 
 let server: MongoMemoryServer;
 beforeAll(async () => {

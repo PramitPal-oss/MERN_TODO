@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { notificationsApi } from "../api";
-import { apiMessage, getAccessToken, onTokenChange, refreshAccess } from "../api/client";
+import { apiMessage, getAccessToken, getAuthGeneration, onTokenChange, refreshAccess } from "../api/client";
 import { createNotificationSocket } from "../socket/client";
 import type { Meta, NotificationItem } from "../types/api";
 import type { Socket } from "socket.io-client";
@@ -173,7 +173,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       if (isRefreshingAuthRef.current) return;
       isRefreshingAuthRef.current = true;
       try {
-        await refreshAccess();
+        await refreshAccess(getAuthGeneration());
         if (socketRef.current && activeUserRef.current === userId) {
           socketRef.current.auth = { accessToken: getAccessToken() };
           socketRef.current.connect();
