@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bell, MessageSquare, Check, WifiOff, Loader2 } from "lucide-react";
+import { Bell, MessageSquare, Check, WifiOff, Loader2, Heart } from "lucide-react";
 
 function formatRelativeTime(isoString: string): string {
   try {
@@ -217,7 +217,11 @@ export function NotificationBell() {
                     }}
                   >
                     <div className="mt-0.5 shrink-0 rounded-full p-1.5 bg-muted text-muted-foreground">
-                      <MessageSquare className="h-3.5 w-3.5" />
+                      {notif.type === "NEW_LIKE" ? (
+                        <Heart className="h-3.5 w-3.5 text-pink-500" />
+                      ) : (
+                        <MessageSquare className="h-3.5 w-3.5" />
+                      )}
                     </div>
 
                     <div className="flex-1 space-y-1 min-w-0">

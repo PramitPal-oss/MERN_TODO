@@ -187,3 +187,63 @@ export async function notifyReplyCreated(params: {
 
   return dto;
 }
+
+export async function notifyLike(params: {
+  recipientId: string;
+  actorId: string;
+  actorName: string;
+  postTitle: string;
+  postSlug: string;
+  postId: string;
+  commentId?: string;
+}) {
+  const { recipientId, actorId, actorName, postTitle, postSlug, postId, commentId } = params;
+  if (recipientId === actorId) {
+    return null;
+  }
+
+  const target = commentId ? "your comment" : "your post";
+  const message = `${actorName} liked ${target} on "${postTitle}"`.slice(0, 320);
+
+  let notification: any;
+  try {
+    notification = await Notification.create({
+      recipient: recipientId,
+      actor: actorId,
+      type: "NEW_LIKE",
+      message,
+      post: postId,
+      postSlug: postSlug.slice(0, 200),
+      comment: commentId || undefined,
+      isRead: false
+    });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      const existing = await Notification.findOne({
+        recipient: recipientId,
+        type: "NEW_LIKE",
+        actor: actorId,
+        post: postId,
+        comment: commentId || null
+      }).lean();
+      return existing ? notificationDto(existing) : null;
+    }
+    logger.error(
+      { recipientId, postId, commentId, err: error instanceof Error ? error.message : "Persistence failure" },
+      "Notification write failed; preserving like success"
+    );
+    return null;
+  }
+
+  const dto = notificationDto(notification);
+  try {
+    await publishNotification(recipientId, dto);
+  } catch (error) {
+    logger.error(
+      { recipientId, postId, commentId, err: error instanceof Error ? error.message : "Publish failure" },
+      "Notification emission failed; retained in database for REST recovery"
+    );
+  }
+
+  return dto;
+}

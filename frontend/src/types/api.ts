@@ -10,11 +10,11 @@ export interface AuthPayload { user: User; accessToken: string; expiresIn: numbe
 export interface NotificationItem {
   id: string;
   actorId: string;
-  type: "NEW_COMMENT" | "NEW_REPLY";
+  type: "NEW_COMMENT" | "NEW_REPLY" | "NEW_LIKE";
   message: string;
   postId: string;
   postSlug: string;
-  commentId: string;
+  commentId?: string;
   isRead: boolean;
   createdAt: string;
   updatedAt: string;
